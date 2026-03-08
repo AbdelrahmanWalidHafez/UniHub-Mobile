@@ -1,4 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
+import 'dart:io';
+import 'dart:async';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -10,9 +16,11 @@ class LoginPage extends StatefulWidget {
 class _LoginPageState extends State<LoginPage> {
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
+  final storage = FlutterSecureStorage();
   final _formKey = GlobalKey<FormState>();
   bool _isPasswordVisible = false;
   bool _isLoading = false;
+  String? _errorMessage;
 
   @override
   void dispose() {
@@ -23,19 +31,102 @@ class _LoginPageState extends State<LoginPage> {
 
   Future<void> _handleLogin() async {
     if (_formKey.currentState!.validate()) {
-      setState(() => _isLoading = true);
+      setState(() {
+        _isLoading = true;
+        _errorMessage = null;
+      });
 
-      // TODO: Add API call here
-      await Future.delayed(const Duration(seconds: 2));
+      try {
+        final url = 'http://192.168.1.5:8083/api/v1/auth/login-mobile';
 
-      if (mounted) {
-        setState(() => _isLoading = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Welcome ${_emailController.text}!'),
-            backgroundColor: Colors.green,
-          ),
-        );
+        final response = await http.post(
+          Uri.parse(url),
+          headers: {'Content-Type': 'application/json'},
+          body: json.encode({
+            'email': _emailController.text.trim(),
+            'password': _passwordController.text,
+          }),
+        ).timeout(const Duration(seconds: 60));
+
+
+        final responseData = json.decode(response.body);
+
+        // Check response status
+        if (response.statusCode == 200) {
+
+          final responseData = json.decode(response.body);
+
+          final String accessToken = responseData['accessToken'];
+          final String refreshToken = responseData['refreshToken'];
+
+          // ✅ SECURELY save tokens
+          await storage.write(key: 'access_token', value: accessToken);
+          await storage.write(key: 'refresh_token', value: refreshToken);
+
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Login successful!'),
+                backgroundColor: Colors.green,
+              ),
+            );
+
+            // TODO: Navigate to home page
+            // Navigator.pushReplacementNamed(context, '/home');
+          }
+        } else if (response.statusCode == 401) {
+          // UNAUTHORIZED - Wrong email or password
+
+
+          String errorMsg = responseData['message'] ?? 'Invalid email or password';
+
+          setState(() {
+            _errorMessage = '$errorMsg';
+          });
+        } else if (response.statusCode == 400) {
+          //  BAD REQUEST - Invalid data format
+          setState(() {
+            _errorMessage = 'Invalid request format. Check email and password.';
+          });
+        } else if (response.statusCode >= 500) {
+          // SERVER ERROR - Backend problem
+          print(' SERVER ERROR: Status ${response.statusCode}');
+
+          setState(() {
+            _errorMessage = ' Server error (${response.statusCode}). Please try again later.';
+          });
+        } else {
+          //  OTHER ERROR
+          print(' UNEXPECTED STATUS: ${response.statusCode}');
+
+          setState(() {
+            _errorMessage = ' Unexpected error. Please try again.';
+          });
+        }
+      } on TimeoutException catch (_) {
+
+        setState(() {
+          _errorMessage = ' Server is too slow. Please try again later.';
+        });
+      } on SocketException catch (_) {
+        // NETWORK ERROR - Can't reach server
+        print(' NETWORK ERROR: Cannot reach server');
+
+        setState(() {
+          _errorMessage = ' Cannot connect to server. Is the backend running?';
+        });
+      } catch (e) {
+        // UNKNOWN ERROR
+        print(' UNKNOWN ERROR: $e');
+        print(' ERROR TYPE: ${e.runtimeType}');
+
+        setState(() {
+          _errorMessage = ' Connection error. Check if backend is running.';
+        });
+      } finally {
+        if (mounted) {
+          setState(() => _isLoading = false);
+        }
       }
     }
   }
@@ -232,7 +323,19 @@ class _LoginPageState extends State<LoginPage> {
                     ],
                   ),
 
-                  const SizedBox(height: 32),
+                  if (_errorMessage != null)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 16),
+                      child: Text(
+                        _errorMessage!,
+                        style: const TextStyle(
+                          color: Colors.red,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ),
+
+                  const SizedBox(height: 16),
 
                   // Login Button
                   Center(
