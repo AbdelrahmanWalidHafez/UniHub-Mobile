@@ -7,12 +7,13 @@ class AuthProvider extends ChangeNotifier {
   bool _isLoading = true;
   Map<String, dynamic>? _currentUser;
   bool _isInitialized = false;
+  String? _activationError;
 
   String? get accessToken => _accessToken;
   bool get isLoading => _isLoading;
   bool get isAuthenticated => _accessToken != null;
   Map<String, dynamic>? get currentUser => _currentUser;
-
+  String? get activationError => _activationError;
 
   String get userName {
     if (_currentUser == null) return 'User';
@@ -111,7 +112,6 @@ class AuthProvider extends ChangeNotifier {
         final accessToken = result['tokens']['accessToken'];
         _accessToken = accessToken;
 
-        // Load user data from cloud
         await loadUserData();
 
         if (AuthService.enableLogging) print('Login successful, user: ${userName}');
@@ -124,6 +124,98 @@ class AuthProvider extends ChangeNotifier {
       notifyListeners();
     }
   }
+
+
+  Future<bool> requestActivationCode(String email) async {
+    _isLoading = true;
+    _activationError = null;
+    notifyListeners();
+
+    try {
+      final success = await AuthService.requestActivationCode(email);
+      if (!success) {
+        _activationError = 'Failed to send activation code. Email may not be registered.';
+      }
+      return success;
+    } catch (e) {
+      _activationError = e.toString();
+      return false;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+
+  Future<String?> verifyActivationCode(String email, String code) async {
+    _isLoading = true;
+    _activationError = null;
+    notifyListeners();
+
+    try {
+      final verificationToken = await AuthService.verifyActivationCode(email, code);
+      if (verificationToken == null) {
+        _activationError = 'Invalid or expired verification code.';
+      }
+      return verificationToken;
+    } catch (e) {
+      _activationError = e.toString();
+      return null;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+
+  Future<bool> setPassword(String password, String confirmPassword, String verificationToken) async {
+    _isLoading = true;
+    _activationError = null;
+    notifyListeners();
+
+    try {
+      final success = await AuthService.setPassword(password, confirmPassword, verificationToken);
+      if (!success) {
+        _activationError = 'Failed to set password. Token may have expired.';
+      }
+      return success;
+    } catch (e) {
+      _activationError = e.toString();
+      return false;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+
+  Future<bool> resendActivationCode(String email) async {
+    _isLoading = true;
+    _activationError = null;
+    notifyListeners();
+
+    try {
+      final success = await AuthService.resendActivationCode(email);
+      if (!success) {
+        _activationError = 'Failed to resend activation code.';
+      }
+      return success;
+    } catch (e) {
+      _activationError = e.toString();
+      return false;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+
+  void clearActivationError() {
+    _activationError = null;
+    notifyListeners();
+  }
+
+
 
   Future<void> logout() async {
     _isLoading = true;

@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'activate_account_screen.dart';
+import 'activation/activate_account_screen.dart';
 import 'home_page.dart';
 import '../providers/auth_provider.dart';
 import '../services/token_service.dart';
+import 'forgot_password/forgot_password_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -303,12 +304,21 @@ class _LoginScreenState extends State<LoginScreen> {
             ),
             const SizedBox(width: 4),
             GestureDetector(
-              onTap: () => ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Change password coming soon'), backgroundColor: Colors.orange),
-              ),
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const ForgotPasswordScreen(),
+                  ),
+                );
+              },
               child: const Text(
                 'Change Password',
-                style: TextStyle(color: Color(0xFF0076B2), fontSize: 14, fontWeight: FontWeight.w600),
+                style: TextStyle(
+                  color: Color(0xFF0076B2),
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ),
           ],
