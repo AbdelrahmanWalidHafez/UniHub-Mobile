@@ -15,6 +15,10 @@ class AuthProvider extends ChangeNotifier {
   Map<String, dynamic>? get currentUser => _currentUser;
   String? get activationError => _activationError;
 
+
+  String? get tid => _currentUser?['university']?['tid']?.toString();
+  String? get cid => _currentUser?['university']?['cid']?.toString();
+
   String get userName {
     if (_currentUser == null) return 'User';
     final firstName = _currentUser?['first_name'] ?? '';
@@ -125,7 +129,6 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
-
   Future<bool> requestActivationCode(String email) async {
     _isLoading = true;
     _activationError = null;
@@ -145,7 +148,6 @@ class AuthProvider extends ChangeNotifier {
       notifyListeners();
     }
   }
-
 
   Future<String?> verifyActivationCode(String email, String code) async {
     _isLoading = true;
@@ -167,7 +169,6 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
-
   Future<bool> setPassword(String password, String confirmPassword, String verificationToken) async {
     _isLoading = true;
     _activationError = null;
@@ -187,7 +188,6 @@ class AuthProvider extends ChangeNotifier {
       notifyListeners();
     }
   }
-
 
   Future<bool> resendActivationCode(String email) async {
     _isLoading = true;
@@ -209,13 +209,10 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
-
   void clearActivationError() {
     _activationError = null;
     notifyListeners();
   }
-
-
 
   Future<void> logout() async {
     _isLoading = true;

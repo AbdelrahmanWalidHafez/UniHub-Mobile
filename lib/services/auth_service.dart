@@ -6,6 +6,18 @@ class AuthService {
   static const String _baseUrl = 'http://34.136.140.99:8083/api/v1/auth';
   static const bool enableLogging = true;
 
+  // ==================== TOKEN METHODS ====================
+
+  static Future<String?> getAccessToken() async {
+    return await TokenService.getAccessToken();
+  }
+
+  static Future<String?> getRefreshToken() async {
+    return await TokenService.getRefreshToken();
+  }
+
+  // ==================== LOGIN / LOGOUT / REFRESH ====================
+
   static Future<Map<String, dynamic>?> login(String email, String password) async {
     try {
       if (enableLogging) print('Attempting login for: $email');
@@ -91,7 +103,7 @@ class AuthService {
         Uri.parse('$_baseUrl/refresh-mobile'),
         headers: {'Content-Type': 'application/json'},
         body: json.encode({
-          'refreshToken': refreshToken,
+          'refresh_token': refreshToken,
         }),
       ).timeout(const Duration(seconds: 30));
 
@@ -150,7 +162,77 @@ class AuthService {
     }
   }
 
+  static Future<void> logout() async {
+    try {
+      final refreshToken = await TokenService.getRefreshToken();
+      final accessToken = await TokenService.getAccessToken();
 
+      if (refreshToken != null) {
+        if (enableLogging) print('Attempting logout');
+        if (enableLogging) print('Using URL: $_baseUrl/logout-mobile');
+
+        await http.post(
+          Uri.parse('$_baseUrl/logout-mobile'),
+          headers: {
+            'Content-Type': 'application/json',
+            if (accessToken != null) 'Authorization': 'Bearer $accessToken',
+          },
+          body: json.encode({
+            'refreshToken': refreshToken,
+          }),
+        ).timeout(const Duration(seconds: 30));
+      }
+    } catch (e) {
+      if (enableLogging) print('Logout error: $e');
+    } finally {
+      await TokenService.clearTokens();
+      if (enableLogging) print('Logout completed, tokens cleared');
+    }
+  }
+
+  // ==================== USER INFO ====================
+
+  static Future<Map<String, dynamic>?> getUserInfo() async {
+    try {
+      final accessToken = await TokenService.getAccessToken();
+
+      if (accessToken == null) {
+        if (enableLogging) print('No access token to fetch user');
+        return null;
+      }
+
+      if (enableLogging) print('Fetching user info from: $_baseUrl/user-info');
+
+      final response = await http.get(
+        Uri.parse('$_baseUrl/user-info'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $accessToken',
+        },
+      ).timeout(const Duration(seconds: 30));
+
+      if (response.statusCode == 200) {
+        final Map<String, dynamic> userData = json.decode(response.body);
+        if (enableLogging) print('User info fetched successfully');
+        return userData;
+      } else if (response.statusCode == 401) {
+        if (enableLogging) print('Token expired, attempting refresh');
+        final refreshed = await refreshTokens();
+        if (refreshed != null && refreshed['success'] == true) {
+          return await getUserInfo();
+        }
+        return null;
+      } else {
+        if (enableLogging) print('Failed to fetch user info: ${response.statusCode}');
+        return null;
+      }
+    } catch (e) {
+      if (enableLogging) print('Error fetching user info: $e');
+      return null;
+    }
+  }
+
+  // ==================== ACCOUNT ACTIVATION ====================
 
   static Future<bool> requestActivationCode(String email) async {
     try {
@@ -276,74 +358,7 @@ class AuthService {
     return await requestActivationCode(email);
   }
 
-
-
-  static Future<void> logout() async {
-    try {
-      final refreshToken = await TokenService.getRefreshToken();
-      final accessToken = await TokenService.getAccessToken();
-
-      if (refreshToken != null) {
-        if (enableLogging) print('Attempting logout');
-        if (enableLogging) print('Using URL: $_baseUrl/logout-mobile');
-
-        await http.post(
-          Uri.parse('$_baseUrl/logout-mobile'),
-          headers: {
-            'Content-Type': 'application/json',
-            if (accessToken != null) 'Authorization': 'Bearer $accessToken',
-          },
-          body: json.encode({
-            'refreshToken': refreshToken,
-          }),
-        ).timeout(const Duration(seconds: 30));
-      }
-    } catch (e) {
-      if (enableLogging) print('Logout error: $e');
-    } finally {
-      await TokenService.clearTokens();
-      if (enableLogging) print('Logout completed, tokens cleared');
-    }
-  }
-
-  static Future<Map<String, dynamic>?> getUserInfo() async {
-    try {
-      final accessToken = await TokenService.getAccessToken();
-
-      if (accessToken == null) {
-        if (enableLogging) print('No access token to fetch user');
-        return null;
-      }
-
-      if (enableLogging) print('Fetching user info from: $_baseUrl/user-info');
-
-      final response = await http.get(
-        Uri.parse('$_baseUrl/user-info'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $accessToken',
-        },
-      ).timeout(const Duration(seconds: 30));
-
-      if (response.statusCode == 200) {
-        final Map<String, dynamic> userData = json.decode(response.body);
-        if (enableLogging) print('User info fetched successfully');
-        return userData;
-      } else {
-        if (enableLogging) print('Failed to fetch user info: ${response.statusCode}');
-        return null;
-      }
-    } catch (e) {
-      if (enableLogging) print('Error fetching user info: $e');
-      return null;
-    }
-  }
-
-  static Future<String?> getRefreshToken() async {
-    return await TokenService.getRefreshToken();
-  }
-
-
+  // ==================== FORGOT PASSWORD ====================
 
   static Future<void> forgotPassword(String email) async {
     try {
@@ -400,7 +415,6 @@ class AuthService {
       if (response.statusCode == 200) {
         final Map<String, dynamic> data = json.decode(response.body);
 
-        // Extract the opaque token - matches your backend DTO
         final opaqueTokenData = data['verification-opaque-token'];
         String? opaqueToken;
 
@@ -470,6 +484,59 @@ class AuthService {
     } catch (e) {
       if (enableLogging) print('Change password error: $e');
       rethrow;
+    }
+  }
+  static Future<Map<String, dynamic>> changePassword(
+      String password,
+      String confirmPassword,
+      ) async {
+    try {
+      final accessToken = await TokenService.getAccessToken();
+
+      if (accessToken == null) {
+        return {'success': false, 'message': 'Not logged in'};
+      }
+
+      if (enableLogging) print('Changing password (logged-in user)');
+      if (enableLogging) print('Using URL: $_baseUrl/change-password');
+
+      final response = await http.patch(
+        Uri.parse('$_baseUrl/change-password'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $accessToken',
+        },
+        body: json.encode({
+          'password': password,
+          'confirm_password': confirmPassword,
+        }),
+      ).timeout(const Duration(seconds: 30));
+
+      if (enableLogging) print('Change password response status: ${response.statusCode}');
+      if (enableLogging) print('Change password response body: ${response.body}');
+
+      if (response.statusCode == 204 || response.statusCode == 200) {
+        if (enableLogging) print('Password changed successfully');
+        return {'success': true};
+      } else if (response.statusCode == 401) {
+        // Access token might be expired, try a refresh and retry once
+        final refreshed = await refreshTokens();
+        if (refreshed != null && refreshed['success'] == true) {
+          return await changePassword(password, confirmPassword);
+        }
+        return {'success': false, 'message': 'Session expired, please log in again'};
+      } else {
+        String errorMessage = 'Failed to change password';
+        try {
+          final error = json.decode(response.body);
+          errorMessage = error['message'] ?? error['error'] ?? errorMessage;
+        } catch (_) {}
+        if (enableLogging) print('Change password failed: $errorMessage');
+        return {'success': false, 'message': errorMessage};
+      }
+    } catch (e) {
+      if (enableLogging) print('Change password error: $e');
+      return {'success': false, 'message': e.toString()};
     }
   }
 }
