@@ -192,7 +192,7 @@ class _SplashScreenState extends State<SplashScreen>
                                   style: TextStyle(color: Color(0xFF1A1A1A)),
                                 ),
                                 TextSpan(
-                                  text: '.',
+                                  text: ' ',
                                   style: TextStyle(color: Color(0xFF1A1A1A)),
                                 ),
                               ],
