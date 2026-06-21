@@ -13,7 +13,8 @@ class LoginScreen extends StatefulWidget {
   State<LoginScreen> createState() => _LoginScreenState();
 }
 
-class _LoginScreenState extends State<LoginScreen> {
+class _LoginScreenState extends State<LoginScreen>
+    with TickerProviderStateMixin {
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
@@ -21,147 +22,299 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _isLoading = false;
   String? _errorMessage;
 
-  Future<void> _clearStaleTokens() async {
-    await TokenService.clearTokens();
+  // Animation controllers
+  late AnimationController _slideController;
+  late AnimationController _blobController;
+  late AnimationController _shakeController;
+
+  late Animation<Offset> _slideAnimation;
+  late Animation<double> _blobAnimation;
+  late Animation<double> _buttonScaleAnimation;
+
+  static const Color _brand = Color(0xFF0077B3);
+  static const Color _lime = Color(0xFFB9FF66);
+  static const Color _lightBg = Color(0xFFF8FAFB);
+  static const Color _darkGreen = Color(0xFF2E7D32);
+  static const Color _lightGrey = Color(0xFFE0E0E0);
+  static const Color _darkGrey = Color(0xFF757575);
+
+  @override
+  void initState() {
+    super.initState();
+
+    _slideController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 800),
+    );
+    _slideAnimation = Tween<Offset>(
+      begin: const Offset(0, 0.5),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(parent: _slideController, curve: Curves.easeOutCubic));
+
+    _blobController = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 6),
+    )..repeat(reverse: true);
+    _blobAnimation = Tween<double>(begin: 0, end: 1).animate(
+      CurvedAnimation(parent: _blobController, curve: Curves.easeInOut),
+    );
+
+    _shakeController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 400),
+    );
+    _buttonScaleAnimation = TweenSequence<double>([
+      TweenSequenceItem(tween: Tween(begin: 1.0, end: 0.95), weight: 1),
+      TweenSequenceItem(tween: Tween(begin: 0.95, end: 1.05), weight: 1),
+      TweenSequenceItem(tween: Tween(begin: 1.05, end: 1.0), weight: 1),
+    ]).animate(CurvedAnimation(parent: _shakeController, curve: Curves.easeInOut));
+
+    _slideController.forward();
   }
 
   @override
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
+    _slideController.dispose();
+    _blobController.dispose();
+    _shakeController.dispose();
     super.dispose();
   }
 
+  void _triggerShake() {
+    _shakeController.forward().then((_) => _shakeController.reset());
+  }
+
   Future<void> _handleLogin() async {
+    if (_formKey.currentState == null) {
+      _triggerShake();
+      return;
+    }
+
     if (_formKey.currentState!.validate()) {
       setState(() {
         _isLoading = true;
         _errorMessage = null;
       });
 
-      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      try {
+        final authProvider = Provider.of<AuthProvider>(context, listen: false);
 
-      final result = await authProvider.login(
-        _emailController.text.trim(),
-        _passwordController.text,
-      );
+        final result = await authProvider.login(
+          _emailController.text.trim(),
+          _passwordController.text,
+        );
 
-      if (mounted) {
-        setState(() => _isLoading = false);
+        if (mounted) {
+          setState(() => _isLoading = false);
 
-        if (result != null && result['success'] == true) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Login successful!'), backgroundColor: Colors.green),
-          );
+          if (result != null && result['success'] == true) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Login successful!'),
+                backgroundColor: Colors.green,
+                behavior: SnackBarBehavior.floating,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(12))),
+              ),
+            );
 
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (_) => const HomePage()),
-          );
-        } else {
-          setState(() => _errorMessage = result?['message'] ?? 'Login failed');
+            if (mounted) {
+              Navigator.pushReplacement(
+                context,
+                MaterialPageRoute(builder: (_) => const HomePage()),
+              );
+            }
+          } else {
+            setState(() => _errorMessage = result?['message'] ?? 'Login failed');
+            _triggerShake();
+          }
+        }
+      } catch (e) {
+        if (mounted) {
+          setState(() {
+            _isLoading = false;
+            _errorMessage = e.toString();
+          });
+          _triggerShake();
         }
       }
+    } else {
+      _triggerShake();
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Container(
-        decoration: BoxDecoration(
-          image: DecorationImage(
-            image: AssetImage('assets/images/background2.jpeg'),
-            fit: BoxFit.cover,
-          ),
-        ),
-        child: SafeArea(
-          child: Center(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(horizontal: 32.0),
-              child: Container(
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.95),
-                  borderRadius: BorderRadius.circular(24),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black12,
-                      blurRadius: 10,
-                      offset: const Offset(0, 4),
+      backgroundColor: _lightBg,
+      body: Stack(
+        children: [
+          // Animated floating blobs
+          AnimatedBuilder(
+            animation: _blobAnimation,
+            builder: (context, child) {
+              final t = _blobAnimation.value;
+              return Stack(
+                children: [
+                  Positioned(
+                    top: -80 + t * 60,
+                    right: -60 - t * 40,
+                    child: Container(
+                      width: 300,
+                      height: 300,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: RadialGradient(
+                          colors: [_brand.withOpacity(0.15), _brand.withOpacity(0)],
+                          stops: const [0, 0.7],
+                        ),
+                      ),
                     ),
-                  ],
-                ),
-                padding: const EdgeInsets.all(24),
-                child: Form(
-                  key: _formKey,
+                  ),
+                  Positioned(
+                    bottom: -60 - (1 - t) * 50,
+                    left: -60 + t * 50,
+                    child: Container(
+                      width: 250,
+                      height: 250,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: RadialGradient(
+                          colors: [_lime.withOpacity(0.2), _lime.withOpacity(0)],
+                          stops: const [0, 0.7],
+                        ),
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    top: MediaQuery.of(context).size.height * 0.4 + t * 40,
+                    right: -30 - t * 20,
+                    child: Container(
+                      width: 180,
+                      height: 180,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: RadialGradient(
+                          colors: [_lime.withOpacity(0.12), _lime.withOpacity(0)],
+                          stops: const [0, 0.7],
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+
+          SafeArea(
+            child: Center(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(horizontal: 24.0),
+                child: SlideTransition(
+                  position: _slideAnimation,
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      // Logo
+
                       Container(
                         width: 100,
                         height: 100,
-                        child: Image.asset('assets/images/logo.png', fit: BoxFit.contain,
-                          errorBuilder: (_, __, ___) => Container(
-                            color: Colors.grey.shade200,
-                            child: const Icon(Icons.school, size: 50, color: Color(0xFF0077B3)),
+                        decoration: BoxDecoration(
+                          color: Colors.transparent,
+                          borderRadius: BorderRadius.circular(25),
+                          boxShadow: [
+                            BoxShadow(
+                              color: _lime.withOpacity(0.2),
+                              blurRadius: 20,
+                              spreadRadius: 5,
+                            ),
+                          ],
+                        ),
+                        child: Center(
+                          child: Image.asset(
+                            'assets/images/logo.png',
+                            width: 70,
+                            height: 70,
+                            fit: BoxFit.contain,
+                            errorBuilder: (_, __, ___) => const Icon(
+                              Icons.school,
+                              size: 45,
+                              color: _brand,
+                            ),
                           ),
                         ),
                       ),
-                      const SizedBox(height: 24),
+                      const SizedBox(height: 30),
 
                       const Text(
                         'UniHub',
                         style: TextStyle(
-                          fontSize: 32,
+                          fontSize: 28,
                           fontWeight: FontWeight.bold,
-                          color: Colors.black,
-                          letterSpacing: -0.5,
+                          color: Color(0xFF1A1A1A),
                         ),
                       ),
                       const SizedBox(height: 8),
 
-                      Column(children: [
-                        Text(
-                          'Connecting Knowledge',
-                          style: TextStyle(fontSize: 16, color: Colors.grey.shade700),
+                      Text(
+                        'Sign in to your UniHub account',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.grey.shade600,
                         ),
-                        Text(
-                          'Empowering Minds',
-                          style: TextStyle(fontSize: 16, color: Colors.grey.shade700),
-                        ),
-                      ]),
-                      const SizedBox(height: 48),
+                      ),
+                      const SizedBox(height: 40),
 
-                      _buildEmailField(),
-                      const SizedBox(height: 20),
-
-                      _buildPasswordField(),
-
-                      if (_errorMessage != null) _buildErrorMessage(),
-
-                      const SizedBox(height: 16),
-
-                      SizedBox(
-                        width: 184,
-                        height: 50,
-                        child: ElevatedButton(
-                          onPressed: _isLoading ? null : _handleLogin,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF080B0C),
-                            foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(15),
+                      // Card
+                      Container(
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(28),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.grey.shade200,
+                              blurRadius: 20,
+                              spreadRadius: 2,
+                              offset: const Offset(0, 8),
                             ),
-                            elevation: 0,
+                          ],
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.all(28),
+                          child: Form(
+                            key: _formKey,
+                            child: Column(
+                              children: [
+                                _buildEmailField(),
+                                const SizedBox(height: 20),
+                                _buildPasswordField(),
+                                if (_errorMessage != null) _buildErrorMessage(),
+                                const SizedBox(height: 28),
+                                _buildLoginButton(),
+                              ],
+                            ),
                           ),
-                          child: _isLoading
-                              ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                              : const Text('Login', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
                         ),
                       ),
 
                       const SizedBox(height: 20),
+
+                      // Terms text
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: Text(
+                          'By signing in, you agree to our Terms of Service and Privacy Policy.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.grey.shade500,
+                            height: 1.5,
+                          ),
+                        ),
+                      ),
+
+                      const SizedBox(height: 30),
 
                       _buildFooterLinks(),
                     ],
@@ -170,7 +323,7 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
             ),
           ),
-        ),
+        ],
       ),
     );
   }
@@ -180,31 +333,40 @@ class _LoginScreenState extends State<LoginScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Email',
+          'Email Address',
           style: TextStyle(
             fontSize: 14,
+            fontWeight: FontWeight.w600,
             color: Colors.grey.shade700,
-            fontWeight: FontWeight.w500,
           ),
         ),
         const SizedBox(height: 8),
         Container(
-          height: 50,
+          height: 52,
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(14),
             color: Colors.grey.shade50,
-            border: Border.all(color: Colors.grey.shade300, width: 1),
+            border: Border.all(color: _lightGrey),
           ),
           child: TextFormField(
             controller: _emailController,
             keyboardType: TextInputType.emailAddress,
             enabled: !_isLoading,
+            style: const TextStyle(color: Color(0xFF1A1A1A)),
             decoration: InputDecoration(
               hintText: 'Enter your email',
               hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 14),
               prefixIcon: Icon(Icons.email_outlined, color: Colors.grey.shade500, size: 20),
               border: InputBorder.none,
               contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide: BorderSide(color: _darkGrey, width: 2),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide: BorderSide(color: _lightGrey, width: 1),
+              ),
             ),
             validator: (value) {
               if (value == null || value.isEmpty) return 'Email is required';
@@ -225,22 +387,23 @@ class _LoginScreenState extends State<LoginScreen> {
           'Password',
           style: TextStyle(
             fontSize: 14,
+            fontWeight: FontWeight.w600,
             color: Colors.grey.shade700,
-            fontWeight: FontWeight.w500,
           ),
         ),
         const SizedBox(height: 8),
         Container(
-          height: 50,
+          height: 52,
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(14),
             color: Colors.grey.shade50,
-            border: Border.all(color: Colors.grey.shade300, width: 1),
+            border: Border.all(color: _lightGrey),
           ),
           child: TextFormField(
             controller: _passwordController,
             obscureText: !_isPasswordVisible,
             enabled: !_isLoading,
+            style: const TextStyle(color: Color(0xFF1A1A1A)),
             decoration: InputDecoration(
               hintText: 'Enter your password',
               hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 14),
@@ -255,6 +418,14 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
               border: InputBorder.none,
               contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide: BorderSide(color: _darkGrey, width: 2),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide: BorderSide(color: _lightGrey, width: 1),
+              ),
             ),
             validator: (value) {
               if (value == null || value.isEmpty) return 'Password is required';
@@ -267,23 +438,89 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
+  Widget _buildLoginButton() {
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: StatefulBuilder(
+        builder: (context, setState) {
+          bool _isHovered = false;
+
+          return AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            transform: Matrix4.identity()..translate(0.0, _isHovered ? -4.0 : 0.0),
+            child: Container(
+              width: double.infinity,
+              height: 54,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(14),
+                boxShadow: _isHovered
+                    ? [
+                  BoxShadow(
+                    color: _lime.withOpacity(0.4),
+                    blurRadius: 12,
+                    spreadRadius: 2,
+                    offset: const Offset(0, 6),
+                  ),
+                ]
+                    : [],
+              ),
+              child: ElevatedButton(
+                onPressed: _isLoading ? null : _handleLogin,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _lime,
+                  foregroundColor: Colors.black,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  elevation: _isHovered ? 8 : 0,
+                ),
+                onHover: (isHovered) {
+                  setState(() {
+                    _isHovered = isHovered;
+                  });
+                },
+                child: _isLoading
+                    ? const SizedBox(
+                  width: 22,
+                  height: 22,
+                  child: CircularProgressIndicator(
+                    color: Colors.black,
+                    strokeWidth: 2,
+                  ),
+                )
+                    : const Text(
+                  'Sign In',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
   Widget _buildErrorMessage() {
     return Padding(
       padding: const EdgeInsets.only(top: 12),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         decoration: BoxDecoration(
-          color: Colors.red.withOpacity(0.1),
-          borderRadius: BorderRadius.circular(8),
+          color: Colors.red.withOpacity(0.05),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.red.withOpacity(0.2)),
         ),
         child: Row(
           children: [
-            const Icon(Icons.error_outline, color: Colors.red, size: 16),
-            const SizedBox(width: 8),
+            const Icon(Icons.error_outline, color: Colors.red, size: 18),
+            const SizedBox(width: 10),
             Expanded(
               child: Text(
                 _errorMessage!,
-                style: const TextStyle(color: Colors.red, fontSize: 12),
+                style: const TextStyle(color: Colors.red, fontSize: 13),
               ),
             ),
           ],
@@ -300,43 +537,98 @@ class _LoginScreenState extends State<LoginScreen> {
           children: [
             Text(
               'Forgot your password?',
-              style: TextStyle(color: Colors.grey.shade600, fontSize: 14),
+              style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
             ),
-            const SizedBox(width: 4),
-            GestureDetector(
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => const ForgotPasswordScreen(),
-                  ),
-                );
-              },
-              child: const Text(
-                'Change Password',
-                style: TextStyle(
-                  color: Color(0xFF0076B2),
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                ),
+            const SizedBox(width: 6),
+            MouseRegion(
+              cursor: SystemMouseCursors.click,
+              child: StatefulBuilder(
+                builder: (context, setState) {
+                  bool _isHovered = false;
+                  return GestureDetector(
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const ForgotPasswordScreen(),
+                        ),
+                      );
+                    },
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      decoration: BoxDecoration(
+                        border: Border(
+                          bottom: BorderSide(
+                            color: _isHovered ? Colors.black : Colors.transparent,
+                            width: 1.5,
+                          ),
+                        ),
+                      ),
+                      child: MouseRegion(
+                        onEnter: (_) => setState(() => _isHovered = true),
+                        onExit: (_) => setState(() => _isHovered = false),
+                        child: Text(
+                          'Reset here',
+                          style: const TextStyle(
+                            color: Colors.black,
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                            decoration: TextDecoration.underline,
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                },
               ),
             ),
           ],
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 12),
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Text(
               'First time here?',
-              style: TextStyle(color: Colors.grey.shade600, fontSize: 14),
+              style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
             ),
-            const SizedBox(width: 4),
-            GestureDetector(
-              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ActivateAccountScreen())),
-              child: const Text(
-                'Activate Account',
-                style: TextStyle(color: Color(0xFF0076B2), fontSize: 14, fontWeight: FontWeight.w600),
+            const SizedBox(width: 6),
+            MouseRegion(
+              cursor: SystemMouseCursors.click,
+              child: StatefulBuilder(
+                builder: (context, setState) {
+                  bool _isHovered = false;
+                  return GestureDetector(
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const ActivateAccountScreen()),
+                    ),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      decoration: BoxDecoration(
+                        border: Border(
+                          bottom: BorderSide(
+                            color: _isHovered ? Colors.black : Colors.transparent,
+                            width: 1.5,
+                          ),
+                        ),
+                      ),
+                      child: MouseRegion(
+                        onEnter: (_) => setState(() => _isHovered = true),
+                        onExit: (_) => setState(() => _isHovered = false),
+                        child: Text(
+                          'Activate Account',
+                          style: const TextStyle(
+                            color: Colors.black,
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                            decoration: TextDecoration.underline,
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                },
               ),
             ),
           ],
